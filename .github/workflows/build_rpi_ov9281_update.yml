@@ -1,9 +1,12 @@
 name: build_rpi_ov9281_update
 
 # Builds this branch for the RPi 4 (Bullseye armhf) and the RPi 5 (Bookworm
-# arm64), with an OpenHD-SysUtils that knows the OV9281 (camera type 49), and
-# packs an update.zip per board. On the SD card it goes to
-# openhd/update/update.zip, the OpenHD updater installs it on the next boot.
+# arm64), with an OpenHD-SysUtils that knows the OV9281 (camera type 49).
+# - openhd-ov9281-rpi4: the two .deb files and install.sh, which installs them
+#   on the OpenHD 2.6.4 image (that image doesn't install update packages).
+# - openhd-ov9281-rpi5: the openhd binary and the OpenHD-SysUtils .deb, for
+#   development (there is no OpenHD image for the RPi 5 this build runs on).
+# README.txt in each artifact has the steps.
 
 on:
   push:
@@ -65,8 +68,8 @@ jobs:
             apt-get install -y --no-install-recommends device-tree-compiler dpkg-dev fakeroot
             bash .github/scripts/build_sysutils_ov9281.sh /opt/out
 
-      - name: Pack update.zip
-        run: bash .github/scripts/pack_update_zip.sh rpi4 out dist
+      - name: Pack the artifact
+        run: bash .github/scripts/pack_ov9281_artifact.sh rpi4 out dist
 
       - uses: actions/upload-artifact@v7
         with:
@@ -123,8 +126,8 @@ jobs:
             cp -v /opt/build-openhd/openhd /opt/out/binaries/openhd
             bash .github/scripts/build_sysutils_ov9281.sh /opt/out
 
-      - name: Pack update.zip
-        run: bash .github/scripts/pack_update_zip.sh rpi5 out dist
+      - name: Pack the artifact
+        run: bash .github/scripts/pack_ov9281_artifact.sh rpi5 out dist
 
       - uses: actions/upload-artifact@v7
         with:

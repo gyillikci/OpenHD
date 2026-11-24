@@ -9,16 +9,21 @@ set -euo pipefail
 distribution="$1"
 architecture="$2"
 
-number="$(curl -fsS -G "https://api.cloudsmith.io/v1/packages/openhd/dev-release/" \
-    --data-urlencode "query=name:openhd-sys-utils AND distribution:${distribution} AND architecture:${architecture}" \
-    --data-urlencode "sort=-version" \
-    --data-urlencode "page_size=1" |
-  python3 -c 'import json, sys
-packages = json.load(sys.stdin)
-print(packages[0]["version"].split(".")[3] if packages else "")' || true)"
+packages="$(curl -fsS --retry 3 --retry-all-errors -G "https://api.cloudsmith.io/v1/packages/openhd/dev-release/" \
+  --data-urlencode "query=name:openhd-sys-utils AND distribution:${distribution} AND architecture:${architecture}" \
+  --data-urlencode "sort=-version" \
+  --data-urlencode "page_size=100")"
 
+number="$(python3 -c 'import json, re, sys
+numbers = [int(m.group(1)) for p in json.load(sys.stdin)
+           if p.get("name") == "openhd-sys-utils"
+           for m in [re.fullmatch(r"1\.0\.3\.(\d+)", p.get("version", ""))] if m]
+print(max(numbers) if numbers else "")' <<< "${packages}")"
+
+# No fallback: a made-up number (e.g. a date) would be newer than any official
+# package, and no official package would ever replace this build.
 if [[ ! "${number}" =~ ^[0-9]+$ ]]; then
-  echo "::warning::No official OpenHD-SysUtils package found for ${distribution} ${architecture}, using a timestamp" >&2
-  number="$(date -u +%Y%m%d%H%M%S)"
+  echo "::error::No official OpenHD-SysUtils package found for ${distribution} ${architecture}" >&2
+  exit 1
 fi
 echo "OPENHD_BUILD_NUMBER=${number}+ov9281"
