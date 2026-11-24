@@ -25,7 +25,9 @@ env:
 jobs:
   rpi4:
     name: RPi 4 (Bullseye armhf)
-    runs-on: ubuntu-22.04
+    # On ubuntu-22.04 pguyot/arm-runner-action builds e2fsprogs 1.47 from
+    # mirrors.edge.kernel.org first, which kept timing out. ubuntu-24.04 has it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 340
     env:
       # QOpenHD for the ground station: 2.6.4 can't read this build's link
