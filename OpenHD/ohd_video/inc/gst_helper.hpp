@@ -106,6 +106,22 @@ static std::string createSwEncoder(const CameraSettings& settings) {
   return ss.str();
 }
 
+static bool gst_element_is_available(const char* factory_name) {
+  GstElementFactory* factory = gst_element_factory_find(factory_name);
+  if (factory == nullptr) return false;
+  gst_object_unref(factory);
+  return true;
+}
+
+// The RPI 5 has no HW H.264 encoder (no v4l2h264enc), there we have to use SW
+// encoding. We also use it if v4l2h264enc is missing for any other reason
+// (e.g. a RPI 5 that an older sysutils reports with the CM4 platform id), since
+// a pipeline with v4l2h264enc could never start there.
+static bool use_rpi_software_encoder(const CameraSettings& settings) {
+  return settings.force_sw_encode || OHDPlatform::instance().is_rpi5() ||
+         !gst_element_is_available("v4l2h264enc");
+}
+
 static std::string gst_create_rtp_caps(const VideoCodec& videoCodec) {
   std::stringstream ss;
   if (videoCodec == VideoCodec::H264) {
@@ -392,17 +408,13 @@ static std::string create_rpi_hdmi_v4l2_stream(const CameraSettings& settings) {
   return ss.str();
 }
 
-static std::string createLibcamerasrcStream(const CameraSettings& settings) {
+// Properties that only exist on the libcamerasrc of the openhd/arducam
+// libcamera. We make sure not to write them out explicitly when default(s) are
+// still in use.
+static std::string create_openhd_libcamerasrc_properties(
+    const CameraSettings& settings) {
   using namespace openhd;
-  assert(settings.streamed_video_format.isValid());
   std::stringstream ss;
-  // ss << fmt::format("libcamerasrc camera-name={} ",camera_name.value);
-  ss << "libcamerasrc ";  // camera_name is not needed for us - we only support
-                          // one libcamera at a time. rpi cannot do more than
-                          // that anyway.
-  // NOTE: those options require openhd/arducam lbcamera !!
-  // We make sure not to write them out explicitly when default(s) are still in
-  // use
   const auto rotation_degree = libcamera::get_rotation_degree(settings);
   if (rotation_degree.has_value()) {
     ss << "rotation=" << rotation_degree.value() << " ";
@@ -460,7 +472,21 @@ static std::string createLibcamerasrcStream(const CameraSettings& settings) {
     ss << fmt::format("shutter={} ",
                       settings.rpi_libcamera_shutter_microseconds);
   }
-  // openhd-libcamera specific options end
+  return ss.str();
+}
+
+static std::string createLibcamerasrcStream(const CameraSettings& settings) {
+  assert(settings.streamed_video_format.isValid());
+  std::stringstream ss;
+  // ss << fmt::format("libcamerasrc camera-name={} ",camera_name.value);
+  ss << "libcamerasrc ";  // camera_name is not needed for us - we only support
+                          // one libcamera at a time. rpi cannot do more than
+                          // that anyway.
+  // The RPI 5 uses the stock libcamerasrc, which doesn't have the openhd
+  // properties - and gst_parse_launch fails on unknown properties.
+  if (!OHDPlatform::instance().is_rpi5()) {
+    ss << create_openhd_libcamerasrc_properties(settings);
+  }
   ss << " ! ";
   if (settings.streamed_video_format.videoCodec == VideoCodec::H264) {
     // First we set the caps filter(s) on libcamerasrc, this way we control the
@@ -472,8 +498,11 @@ static std::string createLibcamerasrcStream(const CameraSettings& settings) {
         settings.streamed_video_format.width,
         settings.streamed_video_format.height,
         settings.streamed_video_format.framerate);
-    if (settings.force_sw_encode) {
-      openhd::log::get_default()->warn("Forced SW encode");
+    if (use_rpi_software_encoder(settings)) {
+      openhd::log::get_default()->warn(
+          settings.force_sw_encode
+              ? "Forced SW encode"
+              : "No HW H.264 encoder (v4l2h264enc), using SW encode");
       ss << createSwEncoder(settings);
     } else {
       // We got rid of the v4l2convert - see
@@ -964,7 +993,7 @@ static std::string createDummyStreamX(const CameraSettings& settings) {
   if (settings.force_sw_encode) {
     ss << createSwEncoder(settings);
   } else {
-    if (platform.is_rpi()) {
+    if (platform.is_rpi() && !use_rpi_software_encoder(settings)) {
       ss << create_rpi_v4l2_h264_encoder(settings);
     } else if (platform.is_rock()) {
       ss << createRockchipEncoderPipeline(settings);
@@ -1031,7 +1060,7 @@ static std::string create_dummy_filesrc_stream(const CameraSettings& settings) {
   if (settings.force_sw_encode) {
     ss << createSwEncoder(settings);
   } else {
-    if (platform.is_rpi()) {
+    if (platform.is_rpi() && !use_rpi_software_encoder(settings)) {
       if (settings.streamed_video_format.videoCodec == VideoCodec::H264) {
         ss << create_rpi_v4l2_h264_encoder(settings);
       } else {

@@ -108,8 +108,13 @@ std::vector<openhd::Setting> CameraHolder::get_all_settings() {
         openhd::IntSetting{get_settings().enable_ultra_secure_encryption,
                            cb_encryption}});
   }
+  // The stock libcamerasrc on the RPI 5 has none of the openhd IQ / flip
+  // properties (see OHDGstHelper::createLibcamerasrcStream)
+  const bool supports_openhd_libcamera_properties =
+      m_camera.requires_rpi_libcamera_pipeline() &&
+      !OHDPlatform::instance().is_rpi5();
   const bool supports_rotation_vflip_hflip =
-      m_camera.requires_rpi_libcamera_pipeline() ||
+      supports_openhd_libcamera_properties ||
       m_camera.requires_rpi_mmal_pipeline() ||
       m_camera.x20_supports_basic_iq_params() ||
       m_camera.requires_rockchip5_mpp_pipeline() ||
@@ -149,7 +154,8 @@ std::vector<openhd::Setting> CameraHolder::get_all_settings() {
   // if(m_camera.sensor_name!="unknown"){
   //   ret.emplace_back(openhd::create_read_only_string("V_CAM_SENSOR",m_camera.sensor_name));
   // }
-  if (!OHDPlatform::instance().is_x20()) {
+  // The RPI 5 has no HW encoder, there SW encode is always used
+  if (!OHDPlatform::instance().is_x20() && !OHDPlatform::instance().is_rpi5()) {
     auto cb = [this](std::string, int value) {
       if (!openhd::validate_yes_or_no(value)) return false;
       unsafe_get_settings().force_sw_encode = value;
@@ -198,7 +204,7 @@ std::vector<openhd::Setting> CameraHolder::get_all_settings() {
         openhd::IntSetting{get_settings().h26x_num_slices, c_h26x_num_slices}});
   }
   // right now only supported by libcamera and (partially) x20
-  const bool SUPPORTS_OPENHD_IQ = m_camera.requires_rpi_libcamera_pipeline() ||
+  const bool SUPPORTS_OPENHD_IQ = supports_openhd_libcamera_properties ||
                                   m_camera.x20_supports_basic_iq_params();
   if (SUPPORTS_OPENHD_IQ) {
     auto cb_sharpness = [this](std::string, int value) {
@@ -226,7 +232,7 @@ std::vector<openhd::Setting> CameraHolder::get_all_settings() {
         "BRIGHTNESS",
         openhd::IntSetting{get_settings().openhd_brightness, c_brightness}});
   }
-  const bool SUPPORTS_IQ = m_camera.requires_rpi_libcamera_pipeline();
+  const bool SUPPORTS_IQ = supports_openhd_libcamera_properties;
   // These are rpi libcamera specific image quality settings
   if (SUPPORTS_IQ) {
     auto cb_ev = [this](std::string, int value) {

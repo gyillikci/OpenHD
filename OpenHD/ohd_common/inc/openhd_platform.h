@@ -34,14 +34,16 @@ static constexpr int X_PLATFORM_TYPE_UNKNOWN = 0;
 // Generic X86
 static constexpr int X_PLATFORM_TYPE_X86 = 1;
 // Numbers 10..20 are reserved for rpi
-// Right now we are only interested if it is an RPI of the
-// generation RPI 4 / RPI CM4 or the generation before -
-// NOTE: RPI 5 is currently not supported due to the complete lack of suitable
-// HW acceleration
+// NOTE: The RPI 5 has no HW H.264 encoder, libcamera cameras are SW encoded
+// there.
 static constexpr int X_PLATFORM_TYPE_RPI_OLD = 10;
 static constexpr int X_PLATFORM_TYPE_RPI_4 = 11;
 static constexpr int X_PLATFORM_TYPE_RPI_CM4 = 12;
-static constexpr int X_PLATFORM_TYPE_RPI_5 = 12;
+// Has to match the id OpenHD-SysUtils reports for the RPI 5. Older releases
+// used 12 for both the CM4 and the RPI 5.
+static constexpr int X_PLATFORM_TYPE_RPI_5 = 13;
+static_assert(X_PLATFORM_TYPE_RPI_CM4 != X_PLATFORM_TYPE_RPI_5,
+              "CM4 and RPI 5 need different platform ids");
 
 // Numbers 20..30 are reserved for rockchip
 static constexpr int X_PLATFORM_TYPE_ROCKCHIP_RK3566_RADXA_ZERO3W =
@@ -94,6 +96,7 @@ struct OHDPlatform {
   [[nodiscard]] std::string to_string() const;
   static const OHDPlatform& instance();
   bool is_rpi() const;
+  bool is_rpi5() const;
   bool is_rock() const;
   bool is_zero3w() const;
   bool is_radxa_cm3() const;

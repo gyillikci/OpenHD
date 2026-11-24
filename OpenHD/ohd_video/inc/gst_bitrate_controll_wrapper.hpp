@@ -57,7 +57,11 @@ get_dynamic_bitrate_control_element_in_pipeline(
     ret.property_name = "bitrate";
     ret.takes_kbit = false;
   } else if (camera.camera_type == X_CAM_TYPE_DUMMY_SW ||
-             is_usb_camera(camera.camera_type) || settings.force_sw_encode) {
+             is_usb_camera(camera.camera_type) || settings.force_sw_encode ||
+             camera.requires_rpi_libcamera_pipeline()) {
+    // libcamera pipelines only have a "swencoder" if they are SW encoded (e.g.
+    // always on the RPI 5). With the RPI 4 HW encoder there is none and a
+    // bitrate change still restarts the pipeline.
     ret.encoder = gst_bin_get_by_name(GST_BIN(gst_pipeline), "swencoder");
     ret.property_name = "bitrate";
 #ifdef EXPERIMENTAL_USE_OPENH264_ENCODER

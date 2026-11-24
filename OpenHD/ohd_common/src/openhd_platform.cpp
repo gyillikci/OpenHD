@@ -39,7 +39,12 @@ const char* platform_cache_path() {
   return path.c_str();
 }
 
-std::optional<int> read_cached_platform_type() {
+struct CachedPlatform {
+  int platform_type;
+  std::string platform_name;
+};
+
+std::optional<CachedPlatform> read_cached_platform() {
   if (!OHDFilesystemUtil::exists(platform_cache_path())) {
     return std::nullopt;
   }
@@ -55,7 +60,19 @@ std::optional<int> read_cached_platform_type() {
   if (!parsed["platform_type"].is_number_integer()) {
     return std::nullopt;
   }
-  return parsed["platform_type"].get<int>();
+  std::string platform_name;
+  if (parsed.contains("platform_name") && parsed["platform_name"].is_string()) {
+    platform_name = parsed["platform_name"].get<std::string>();
+  }
+  return CachedPlatform{parsed["platform_type"].get<int>(), platform_name};
+}
+
+// Older builds used id 12 for both the CM4 and the RPI 5 and therefore cached
+// both as {12, "RPI 5"}. Such an entry has to be looked up once more, sysutils
+// now reports the CM4 (12) and the RPI 5 (13) with different ids.
+bool is_legacy_cm4_or_rpi5_cache(const CachedPlatform& cached) {
+  return cached.platform_type == X_PLATFORM_TYPE_RPI_CM4 &&
+         cached.platform_name == "RPI 5";
 }
 
 void write_cached_platform_type(int platform_type) {
@@ -67,12 +84,20 @@ void write_cached_platform_type(int platform_type) {
 }
 
 int request_platform_from_sysutils() {
-  auto cached = read_cached_platform_type();
-  if (cached.has_value()) {
-    return cached.value();
+  const auto cached = read_cached_platform();
+  const bool legacy_cache =
+      cached.has_value() && is_legacy_cm4_or_rpi5_cache(cached.value());
+  if (cached.has_value() && !legacy_cache) {
+    return cached->platform_type;
   }
   auto platform_opt = openhd::request_platform_type();
   if (!platform_opt.has_value()) {
+    if (legacy_cache) {
+      openhd::log::get_default()->warn(
+          "Platform request from sysutils failed, keeping cached platform {}.",
+          cached->platform_type);
+      return cached->platform_type;
+    }
     openhd::log::get_default()->warn(
         "Platform request from sysutils failed, defaulting to UNKNOWN.");
     return X_PLATFORM_TYPE_UNKNOWN;
@@ -93,6 +118,8 @@ std::string x_platform_type_to_string(int platform_type) {
       return "RPI<=3";
     case X_PLATFORM_TYPE_RPI_4:
       return "RPI 4";
+    case X_PLATFORM_TYPE_RPI_CM4:
+      return "RPI CM4";
     case X_PLATFORM_TYPE_RPI_5:
       return "RPI 5";
     case X_PLATFORM_TYPE_ROCKCHIP_RK3566_RADXA_ZERO3W:
@@ -136,7 +163,8 @@ int get_fec_max_block_size_for_platform() {
   auto platform_type = OHDPlatform::instance().platform_type;
 
   if (platform_type == X_PLATFORM_TYPE_RPI_4 ||
-      platform_type == X_PLATFORM_TYPE_RPI_CM4) {
+      platform_type == X_PLATFORM_TYPE_RPI_CM4 ||
+      platform_type == X_PLATFORM_TYPE_RPI_5) {
     return 50;
   }
   if (platform_type == X_PLATFORM_TYPE_RPI_OLD) {
@@ -185,6 +213,10 @@ std::string OHDPlatform::to_string() const {
 
 bool OHDPlatform::is_rpi() const {
   return platform_type >= 10 && platform_type < 20;
+}
+
+bool OHDPlatform::is_rpi5() const {
+  return platform_type == X_PLATFORM_TYPE_RPI_5;
 }
 
 bool OHDPlatform::is_rock() const {
