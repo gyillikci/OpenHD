@@ -31,6 +31,7 @@
 
 #include "camera_settings.hpp"
 #include "libcamera_iq_helper.h"
+#include "libcamerasrc_support.h"
 #include "openhd_bitrate.h"
 #include "openhd_platform.h"
 #include "openhd_spdlog.h"
@@ -482,9 +483,9 @@ static std::string createLibcamerasrcStream(const CameraSettings& settings) {
   ss << "libcamerasrc ";  // camera_name is not needed for us - we only support
                           // one libcamera at a time. rpi cannot do more than
                           // that anyway.
-  // The RPI 5 uses the stock libcamerasrc, which doesn't have the openhd
-  // properties - and gst_parse_launch fails on unknown properties.
-  if (!OHDPlatform::instance().is_rpi5()) {
+  // The stock libcamerasrc (Raspberry Pi OS, every RPI 5) doesn't have the
+  // openhd properties - and gst_parse_launch fails on unknown properties.
+  if (openhd::libcamerasrc_has_openhd_properties()) {
     ss << create_openhd_libcamerasrc_properties(settings);
   }
   ss << " ! ";

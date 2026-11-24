@@ -24,6 +24,7 @@
 #include "camera_holder.h"
 
 #include "include_json.hpp"
+#include "libcamerasrc_support.h"
 #include "openhd_spdlog_include.h"
 
 NLOHMANN_JSON_SERIALIZE_ENUM(VideoCodec, {
@@ -108,11 +109,11 @@ std::vector<openhd::Setting> CameraHolder::get_all_settings() {
         openhd::IntSetting{get_settings().enable_ultra_secure_encryption,
                            cb_encryption}});
   }
-  // The stock libcamerasrc on the RPI 5 has none of the openhd IQ / flip
-  // properties (see OHDGstHelper::createLibcamerasrcStream)
+  // The stock libcamerasrc (Raspberry Pi OS, every RPI 5) has none of the
+  // openhd IQ / flip properties (see OHDGstHelper::createLibcamerasrcStream)
   const bool supports_openhd_libcamera_properties =
       m_camera.requires_rpi_libcamera_pipeline() &&
-      !OHDPlatform::instance().is_rpi5();
+      openhd::libcamerasrc_has_openhd_properties();
   const bool supports_rotation_vflip_hflip =
       supports_openhd_libcamera_properties ||
       m_camera.requires_rpi_mmal_pipeline() ||

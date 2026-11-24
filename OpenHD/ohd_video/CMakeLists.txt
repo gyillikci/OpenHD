@@ -69,6 +69,7 @@ if(ENABLE_AIR)
             src/ohd_video_air.cpp
             src/rtp_eof_helper.cpp
             src/camera_holder.cpp
+            src/libcamerasrc_support.cpp
             src/ohd_video_air_generic_settings.cpp
             src/validate_settings.cpp
             src/usb_thermal_cam_helper.cpp

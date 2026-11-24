@@ -28,6 +28,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <sstream>
 
 #include "config_paths.h"
 #include "openhd_config.h"
@@ -37,36 +38,63 @@
 static std::string ETHERNET_FILE_PATH =
     std::string(getConfigBasePath()) + "ethernet.txt";
 
-EthernetLink::EthernetLink(const openhd::Config& config, OHDProfile profile)
-    : m_config(config), m_profile(profile) {
-  std::cout << "ethernet starting " << std::endl;
+namespace {
 
-  if (OHDFilesystemUtil::exists(ETHERNET_FILE_PATH)) {
-    const auto config = openhd::load_config();
-    std::cout << "ethernet config load " << std::endl;
-
-    try {
-      // Assign to class member variables instead of local static variables
-      GROUND_UNIT_IP = config.GROUND_UNIT_IP;
-      AIR_UNIT_IP = config.AIR_UNIT_IP;
-      VIDEO_PORT = config.VIDEO_PORT;
-      TELEMETRY_PORT = config.TELEMETRY_PORT;
-
-      // Debugging the values after assignment
-      std::cout << "Assigned ethernet parameters:" << std::endl;
-      std::cout << "  GROUND_UNIT_IP: " << GROUND_UNIT_IP << std::endl;
-      std::cout << "  AIR_UNIT_IP: " << AIR_UNIT_IP << std::endl;
-      std::cout << "  VIDEO_PORT: " << VIDEO_PORT << std::endl;
-      std::cout << "  TELEMETRY_PORT: " << TELEMETRY_PORT << std::endl;
-    } catch (const std::exception& ex) {
-      std::cerr << "Failed to read ethernet parameters: " << ex.what()
-                << std::endl;
-      throw;
+// ethernet.txt may set GROUND_UNIT_IP, AIR_UNIT_IP, VIDEO_PORT and
+// TELEMETRY_PORT, one KEY=VALUE per line ('#' starts a comment line). Keys it
+// doesn't set keep their value.
+void apply_ethernet_file(const std::string& content, std::string& ground_ip,
+                         std::string& air_ip, int& video_port,
+                         int& telemetry_port) {
+  std::istringstream stream(content);
+  std::string line;
+  while (std::getline(stream, line)) {
+    OHDUtil::trim(line);
+    const auto pos = line.find('=');
+    if (line.empty() || line[0] == '#' || pos == std::string::npos) {
+      continue;
     }
-  } else {
-    std::cerr << "Ethernet parameters not found. Using default configuration."
-              << std::endl;
+    auto key = line.substr(0, pos);
+    auto value = line.substr(pos + 1);
+    OHDUtil::trim(key);
+    OHDUtil::trim(value);
+    if (key == "GROUND_UNIT_IP" && !value.empty()) {
+      ground_ip = value;
+    } else if (key == "AIR_UNIT_IP" && !value.empty()) {
+      air_ip = value;
+    } else if (key == "VIDEO_PORT" || key == "TELEMETRY_PORT") {
+      const auto port = OHDUtil::string_to_int(value);
+      if (port.has_value() && port.value() > 0 && port.value() <= 65535) {
+        (key == "VIDEO_PORT" ? video_port : telemetry_port) = port.value();
+      } else {
+        std::cerr << "ethernet.txt: ignoring " << line << std::endl;
+      }
+    }
   }
+}
+
+}  // namespace
+
+EthernetLink::EthernetLink(const openhd::Config& config, OHDProfile profile)
+    : m_profile(profile), m_config(config) {
+  // Defaults < IPs from OpenHD-SysUtils (if set) < ethernet.txt. The ports of
+  // OpenHD-SysUtils are not used: they default to 5000 / 5600, and 5600 is
+  // the port the ground forwards the video to locally.
+  if (!config.GROUND_UNIT_IP.empty()) {
+    GROUND_UNIT_IP = config.GROUND_UNIT_IP;
+  }
+  if (!config.AIR_UNIT_IP.empty()) {
+    AIR_UNIT_IP = config.AIR_UNIT_IP;
+  }
+  const auto content =
+      OHDFilesystemUtil::opt_read_file(ETHERNET_FILE_PATH, false);
+  if (content.has_value()) {
+    apply_ethernet_file(content.value(), GROUND_UNIT_IP, AIR_UNIT_IP,
+                        VIDEO_PORT, TELEMETRY_PORT);
+  }
+  std::cout << "Ethernet link: ground " << GROUND_UNIT_IP << ", air "
+            << AIR_UNIT_IP << ", video port " << VIDEO_PORT
+            << ", telemetry port " << TELEMETRY_PORT << std::endl;
 
   // Initialize either air or ground unit based on the profile
   if (m_profile.is_air) {

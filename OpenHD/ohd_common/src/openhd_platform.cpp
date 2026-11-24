@@ -29,6 +29,7 @@
 #include "openhd_settings_directories.h"
 #include "openhd_sock.h"
 #include "openhd_spdlog.h"
+#include "openhd_util.h"
 #include "openhd_util_filesystem.h"
 
 namespace {
@@ -83,6 +84,31 @@ void write_cached_platform_type(int platform_type) {
   OHDFilesystemUtil::write_file(platform_cache_path(), payload.dump(2));
 }
 
+// Without sysutils (e.g. openhd started by hand on Raspberry Pi OS), at least
+// the Raspberry Pis can be told apart from the device tree, with the same
+// rules as sysutils. Not cached, sysutils stays the source once it runs.
+int detect_rpi_from_device_tree() {
+  const auto model =
+      OHDFilesystemUtil::opt_read_file("/proc/device-tree/model", false);
+  const auto compatible =
+      OHDFilesystemUtil::opt_read_file("/proc/device-tree/compatible", false);
+  const std::string m = model.value_or("");
+  if (OHDUtil::contains(m, "Raspberry Pi 5") ||
+      OHDUtil::contains(compatible.value_or(""), "bcm2712")) {
+    return X_PLATFORM_TYPE_RPI_5;
+  }
+  if (OHDUtil::contains(m, "Compute Module 4")) {
+    return X_PLATFORM_TYPE_RPI_CM4;
+  }
+  if (OHDUtil::contains(m, "Raspberry Pi 4")) {
+    return X_PLATFORM_TYPE_RPI_4;
+  }
+  if (OHDUtil::contains(m, "Raspberry Pi")) {
+    return X_PLATFORM_TYPE_RPI_OLD;
+  }
+  return X_PLATFORM_TYPE_UNKNOWN;
+}
+
 int request_platform_from_sysutils() {
   const auto cached = read_cached_platform();
   const bool legacy_cache =
@@ -98,9 +124,12 @@ int request_platform_from_sysutils() {
           cached->platform_type);
       return cached->platform_type;
     }
+    const int detected = detect_rpi_from_device_tree();
     openhd::log::get_default()->warn(
-        "Platform request from sysutils failed, defaulting to UNKNOWN.");
-    return X_PLATFORM_TYPE_UNKNOWN;
+        "Platform request from sysutils failed, using {} from the device "
+        "tree.",
+        x_platform_type_to_string(detected));
+    return detected;
   }
   write_cached_platform_type(platform_opt.value());
   return platform_opt.value();
