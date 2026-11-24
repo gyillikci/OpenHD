@@ -12,6 +12,10 @@ on:
   push:
     branches:
       - "claude/upbeat-planck-c52i6b"
+    # Docs and the bench script don't change the packages
+    paths-ignore:
+      - "**/*.md"
+      - "tools/**"
   workflow_dispatch:
 
 concurrency:

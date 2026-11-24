@@ -98,9 +98,10 @@ config() {
     "${GROUND_IP}" "${AIR_IP}" "${VIDEO_PORT}" "${TELEMETRY_PORT}" |
     sudo tee /Config/ethernet.txt > /dev/null
   if [[ "${role}" == air ]]; then
-    # Without OpenHD-SysUtils, OpenHD takes the camera from its own settings
+    # Without OpenHD-SysUtils, OpenHD takes the camera from its own settings.
+    # enable_audio 1 means off (OPENHD_AUDIO_DISABLE), there is no microphone.
     sudo mkdir -p /usr/local/share/openhd/video
-    printf '{\n    "dualcam_primary_video_allocated_bandwidth_perc": 60,\n    "enable_audio": 0,\n    "primary_camera_type": 49,\n    "secondary_camera_type": 255,\n    "switch_primary_and_secondary": false\n}\n' |
+    printf '{\n    "dualcam_primary_video_allocated_bandwidth_perc": 60,\n    "enable_audio": 1,\n    "primary_camera_type": 49,\n    "secondary_camera_type": 255,\n    "switch_primary_and_secondary": false\n}\n' |
       sudo tee /usr/local/share/openhd/video/air_camera_generic.json > /dev/null
     if ! grep -q '^dtoverlay=ov9281' "${boot_config}"; then
       echo "Note: ${boot_config} has no dtoverlay=ov9281 line yet. Add camera_auto_detect=0 and dtoverlay=ov9281 (,cam0 for CAM0 on a Pi 5) and reboot." >&2
