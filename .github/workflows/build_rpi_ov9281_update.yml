@@ -27,6 +27,12 @@ jobs:
     name: RPi 4 (Bullseye armhf)
     runs-on: ubuntu-22.04
     timeout-minutes: 340
+    env:
+      # QOpenHD for the ground station: 2.6.4 can't read this build's link
+      # statistics, 2.7.1 (official OpenHD build) uses the same MAVLink messages
+      QOPENHD_DEB: qopenhd_2.7.1-03-18-2026--22-14-12-fee63eb4_armhf.deb
+      QOPENHD_URL: https://dl.cloudsmith.io/public/openhd/dev-release/deb/raspbian/pool/bullseye/main/q/qo/qopenhd_2.7.1-03-18-2026--22-14-12-fee63eb4/qopenhd_2.7.1-03-18-2026--22-14-12-fee63eb4_armhf.deb
+      QOPENHD_SHA256: 1a12250bfeb1a9b5bb0bf13ce461210172ab64019c7594b856f9e3048f86e4d6
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -46,6 +52,12 @@ jobs:
         run: |
           bash .github/scripts/sysutils_build_number.sh raspbian/bullseye armhf >> "$GITHUB_ENV"
           echo "SYSUTILS_REF=${SYSUTILS_REF}" >> "$GITHUB_ENV"
+
+      - name: Download QOpenHD for the ground station
+        run: |
+          mkdir -p qopenhd
+          curl -fsSL --retry 3 -o "qopenhd/${QOPENHD_DEB}" "${QOPENHD_URL}"
+          echo "${QOPENHD_SHA256}  qopenhd/${QOPENHD_DEB}" | sha256sum -c -
 
       - name: Build OpenHD and OpenHD-SysUtils
         uses: pguyot/arm-runner-action@45f370abd7eed1b20397277e5ec0cb0a31adb026
@@ -69,7 +81,7 @@ jobs:
             bash .github/scripts/build_sysutils_ov9281.sh /opt/out
 
       - name: Pack the artifact
-        run: bash .github/scripts/pack_ov9281_artifact.sh rpi4 out dist
+        run: bash .github/scripts/pack_ov9281_artifact.sh rpi4 out dist qopenhd
 
       - uses: actions/upload-artifact@v7
         with:
