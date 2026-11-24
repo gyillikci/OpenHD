@@ -13,7 +13,8 @@
 #   bash tools/ov9281_bench.sh check          # what to send when asking for help
 #   bash tools/ov9281_bench.sh run air        # air Pi, Ctrl+C stops OpenHD
 #   bash tools/ov9281_bench.sh run ground     # ground Pi
-#   bash tools/ov9281_bench.sh view           # ground Pi, second shell: the video
+#   bash tools/ov9281_bench.sh view           # ground Pi, second shell: video on its screen
+#   bash tools/ov9281_bench.sh view fps       # ground Pi: only the received frame rate
 #   bash tools/ov9281_bench.sh reset          # undo config
 set -euo pipefail
 
@@ -32,7 +33,7 @@ if [[ ! -f "${boot_config}" ]]; then
 fi
 
 usage() {
-  sed -n '10,17p' "${BASH_SOURCE[0]}" | sed 's/^# *//' >&2
+  sed -n '10,18p' "${BASH_SOURCE[0]}" | sed 's/^# *//' >&2
   exit 2
 }
 
@@ -99,7 +100,7 @@ config() {
     sudo tee /Config/ethernet.txt > /dev/null
   if [[ "${role}" == air ]]; then
     # Without OpenHD-SysUtils, OpenHD takes the camera from its own settings.
-    # enable_audio 1 means off (OPENHD_AUDIO_DISABLE), there is no microphone.
+    # "enable_audio": 1 is OPENHD_AUDIO_DISABLE (0 would stream a microphone).
     sudo mkdir -p /usr/local/share/openhd/video
     printf '{\n    "dualcam_primary_video_allocated_bandwidth_perc": 60,\n    "enable_audio": 1,\n    "primary_camera_type": 49,\n    "secondary_camera_type": 255,\n    "switch_primary_and_secondary": false\n}\n' |
       sudo tee /usr/local/share/openhd/video/air_camera_generic.json > /dev/null
@@ -147,16 +148,31 @@ run() {
 }
 
 view() {
-  local caps="application/x-rtp,media=video,clock-rate=90000,encoding-name=H264"
-  if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
-    exec gst-launch-1.0 udpsrc port=5600 caps="${caps}" ! rtph264depay ! h264parse ! \
-      avdec_h264 ! videoconvert ! autovideosink sync=false
+  local caps="application/x-rtp,media=video,clock-rate=90000,encoding-name=H264" decoder
+  if [[ "${1:-}" == fps ]]; then
+    echo "Frame rate of the video the ground receives (Ctrl+C stops)."
+    gst-launch-1.0 -v udpsrc port=5600 caps="${caps}" ! rtph264depay ! h264parse ! avdec_h264 ! \
+      fpsdisplaysink video-sink=fakesink text-overlay=false sync=false 2>&1 |
+      grep --line-buffered -o 'rendered: [0-9]*, dropped: [0-9]*, current: [0-9.]*'
+    return
   fi
-  echo "No screen in this shell, showing the frame rate of the video the ground receives (Ctrl+C stops)."
-  echo "For the picture, run this in a terminal on the ground Pi's desktop (screen sharing in Raspberry Pi Connect)."
-  gst-launch-1.0 -v udpsrc port=5600 caps="${caps}" ! rtph264depay ! h264parse ! avdec_h264 ! \
-    fpsdisplaysink video-sink=fakesink text-overlay=false sync=false 2>&1 |
-    grep --line-buffered -o 'rendered: [0-9]*, dropped: [0-9]*, current: [0-9.]*'
+  # From SSH or the Connect remote shell: show it on the Pi's own desktop
+  if [[ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -S "/run/user/$(id -u)/wayland-0" ]]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)" WAYLAND_DISPLAY=wayland-0
+  fi
+  if [[ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
+    die "No desktop on this Pi to show the video on. Use: $0 view fps"
+  fi
+  # Hardware decoder of the RPi 4, software on the RPi 5
+  decoder="avdec_h264 ! videoconvert"
+  if gst-inspect-1.0 v4l2h264dec > /dev/null 2>&1 &&
+    ! tr -d '\0' < /proc/device-tree/model 2> /dev/null | grep -q "Raspberry Pi 5"; then
+    decoder="v4l2h264dec"
+  fi
+  pkill -f '[u]dpsrc port=5600' 2> /dev/null || true
+  echo "Showing the video full screen on the Pi's desktop (${decoder%% *}), Ctrl+C stops."
+  exec gst-launch-1.0 udpsrc port=5600 caps="${caps}" ! rtph264depay ! h264parse ! ${decoder} ! \
+    waylandsink fullscreen=true sync=false
 }
 
 reset() {
@@ -170,7 +186,7 @@ case "${1:-}" in
   config) config "${2:-}" ;;
   check) check ;;
   run) run "${2:-}" ;;
-  view) view ;;
+  view) view "${2:-}" ;;
   reset) reset ;;
   *) usage ;;
 esac
